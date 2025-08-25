@@ -1,0 +1,105 @@
+config:
+  # Configurações de relatório
+  plugins:
+   # expect: { }
+    metrics-by-endpoint: { }
+  ensure:
+    p95: 100    # 95% das requisições < 100ms
+    p99: 200    # 99% das requisições < 200ms 
+    maxErrorRate: 1  # Taxa de erro máxima de 1%
+  target: 'http://localhost:8080'  # URL base da API
+  phases:
+    # Fase 1: Warm-up (30 segundos)
+    - duration: 30
+      arrivalRate: 10
+      name: "Warm-up"
+    # Fase 2: Carga constante (120 segundos) - simula 300k medidores
+    - duration: 120
+      arrivalRate: 200
+      #arrivalCount: 300000
+      name: "Carga Constante - 1k req/s"
+    # Fase 3: Teste de consultas (90 segundos)
+    - duration: 90
+      arrivalRate: 100
+      name: "Consultas Simultâneas"
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  processor: "./test-functions.js"  # Arquivo opcional para funções customizadas
+
+scenarios:
+  # Cenário 1: Salvamento de leituras (70% do tráfego)
+  - name: "Salvar Leituras"
+    weight: 70
+    flow:
+      - function: "generateTimestamp"
+      - post:
+          url: "/api/medidores/{{ $randomString() }}/leituras"
+          json:
+            timestamp: "{{ timestamp }}"
+            #timestamp: "2025-08-22T19:41:17.789Z"
+            tensao: "{{ $randomNumber(200, 240) }}.{{ $randomNumber(0, 9) }}"
+            corrente: "{{ $randomNumber(10, 20) }}.{{ $randomNumber(0, 9) }}"
+            potenciaAtiva: "{{ $randomNumber(2000, 4000) }}.{{ $randomNumber(0, 9) }}"
+            potenciaReativa: "{{ $randomNumber(500, 1000) }}.{{ $randomNumber(0, 9) }}"
+            energiaAtivaDireta: "{{ $randomNumber(10000, 50000) }}.{{ $randomNumber(0, 99) }}"
+            energiaAtivaReversa: "{{ $randomNumber(0, 1000) }}.{{ $randomNumber(0, 99) }}"
+            fatorPotencia: "0.{{ $randomNumber(85, 99) }}"
+            frequencia: "{{ $randomNumber(59, 61) }}.{{ $randomNumber(0, 9) }}"
+          expect:
+            - statusCode: 201
+          capture:
+            - json: "$.id"
+              as: "leituraId"
+
+  # Cenário 2: Consulta de leituras (30% do tráfego)  
+  - name: "Consultar Leituras"
+    weight: 30
+    flow:
+      - function: "generateMedidorId"
+      - function: "generateDataInicio"
+      - function: "generateDataFim"
+      - get:
+          url: "/api/medidores/{{ medidorId }}/leituras?dataInicio={{ dataInicio }}&dataFim={{ dataFim }}&limite=50"
+          #url: "/api/medidores/MED001/leituras?dataInicio=2025-01-22T20:46:33.801Z&dataFim=2025-08-22T20:46:33.801Z&limite=50"
+          expect:
+            - statusCode: 200
+            - hasProperty: "leituras"
+          capture:
+            - json: "$.totalRegistros"
+              as: "totalRegistros"
+
+  # Cenário 3: Teste de validação (casos de erro)
+  - name: "Teste de Validação"
+    weight: 5
+    flow:
+      - function: "generateFutureTimestamp"
+      - post:
+          url: "/api/medidores/MED_TESTE/leituras"
+          json:
+            timestamp: "{{ futureTimestamp }}"  # Timestamp futuro (deve falhar)
+            #timestamp: "2025-10-22T19:41:17.789Z"  # Timestamp futuro (deve falhar)
+            tensao: 1500  # Valor inválido
+            corrente: -5   # Valor inválido
+            potenciaAtiva: 200000  # Valor inválido (200MW)
+            potenciaReativa: 80000  # Valor inválido (80MVAr)
+            energiaAtivaDireta: -100  # Valor inválido
+            energiaAtivaReversa: 1000000000000  # Valor inválido (1TWh)
+            fatorPotencia: 1.5  # Valor inválido
+            frequencia: 70  # Valor inválido
+          expect:
+            - statusCode: 400
+              
+# Dados de teste para 300k medidores
+payload:
+  - medidorIds:
+      - "MED001"
+      - "MED002"
+      - "MED003"
+      - "MED004"
+      - "MED005"
+      - "MED006"
+      - "MED007"
+      - "MED008"
+      - "MED009"
+      - "MED010"
