@@ -77,7 +77,7 @@ Middlewares customizados:
 
 ```bash
 # Clone o repositório
-git clone https://gitlab.com/cleiton366-group/nepen.git
+git clone https://github.com/Cleiton366/nepen.git
 cd Desafio-NEPEN
 
 # Subir aplicação
